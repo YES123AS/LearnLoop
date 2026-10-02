@@ -1,0 +1,64 @@
+name: learnloop
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      args:
+        EMBEDDING_MODEL: ${SPARK_EMBEDDING_MODEL:-paraphrase-multilingual-MiniLM-L12-v2}
+    env_file:
+      - ./.local-data/config/spark.env
+    environment:
+      LEARNLOOP_DATA_DIR: /app/data
+      STUDENT_DB_PATH: /app/data/student_learning.db
+      LANGGRAPH_CHECKPOINT_DB: /app/data/langgraph_checkpoints.db
+      LOOP_OUTPUT_DIR: /app/data/loop_outputs
+      GENERATED_OUTPUT_DIR: /app/data/generated
+      COURSE_DOCS_DIR: /app/spark/docs
+      VECTOR_DB_DIR: /app/spark/vector_db
+      SPARK_EMBEDDING_MODEL: ${SPARK_EMBEDDING_MODEL:-paraphrase-multilingual-MiniLM-L12-v2}
+      SPARK_VECTOR_MODEL_OFFLINE: "true"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - learnloop-data:/app/data
+      - ./spark/docs:/app/spark/docs
+      - ./.local-data/vector_db:/app/spark/vector_db
+    ports:
+      - "8000:8000"
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  learnloop-data:
+    name: learnloop-data
